@@ -1,3 +1,10 @@
+build
+.ipynb_checkpoints
+.virtual_documents
+.cache
+*.root
+*.pyg
+
 # Prerequisites
 *.d
 
