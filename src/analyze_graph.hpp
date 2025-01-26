@@ -11,75 +11,100 @@
 #define LOG(msg) /*nothing*/
 #endif
 
-using Graph = boost::adjacency_list<boost::vecS, boost::vecS, boost::bidirectionalS>;
+
+struct NodeProperty {
+  int weight{1};
+  int distance{weight};
+  int accumulated{};
+};
+
+struct EdgeProperty {
+  int distance{};
+  int accumulated{};
+};
+
+using Graph = boost::adjacency_list<
+  boost::vecS, boost::vecS, boost::bidirectionalS,
+  NodeProperty, EdgeProperty>;
+
 using Vi = std::vector<int>;
 
 // helper function that creates a boost graph from two vectors of int
-inline auto make_graph(const Vi& from, const Vi& to) {
+inline auto make_graph(const Vi& from, const Vi& to, const Vi &weights = {}) {
     Graph g;
     for (size_t i = 0; i < from.size(); ++i) {
         boost::add_edge(from[i], to[i], g);
+    }
+    if(!weights.empty()) {
+      for(auto i=0ul; i<boost::num_vertices(g); ++i) {
+        g[i].weight = weights.at(i);
+      }
     }
     return g;
 }
 
 
-inline auto findMaxDistances(const Graph &g, const Vi nodeWeights) {
-  Vi distance(boost::num_vertices(g), 1);
-  
+inline auto findMaxDistances(Graph &g) {
   // do topological sort with boost
   std::vector<Graph::vertex_descriptor> topoOrder(boost::num_vertices(g));
   boost::topological_sort(g, topoOrder.begin());
 
   for(auto vit = topoOrder.rbegin(); vit != topoOrder.rend(); ++vit) {
-    auto v = *vit;
+    auto src = *vit;
     LOG("On vtx " << v << " with dist " << distance.at(v));
-    auto [it, end] = boost::adjacent_vertices(v, g);
+    auto [it, end] = boost::out_edges(src, g);
     for (; it != end; ++it) {
-      auto weight = nodeWeights.empty() ? 1 : nodeWeights.at(*it);
-      auto newDist = std::max(distance.at(*it), distance.at(v) + weight);
-      distance.at(*it) = newDist;
-      LOG("- set vertex " << *it << "|" << weight << ": " << distance.at(*it) <<
-          " -> " << std::max(distance.at(*it), distance.at(v) + 1));
+      auto tgt = boost::target(*it, g);
+      g[*it].distance = g[src].distance + g[tgt].weight;
+      auto newDist = std::max(g[tgt].distance, g[*it].distance);
+      LOG("- set vertex " << *it << "|" << g[tgt].weight << ": " << g[tgt].distance <<
+          " -> " << newDist);
+      g[tgt].distance = newDist;
     }
   }
-
-  return distance;
 }
 
 
-inline auto accumulateBackwards(const Graph &g, const Vi &distance, const Vi &nodeWeights) {
-  auto rgraph = boost::make_reverse_graph(g);
+inline void accumulateBackwards(Graph &g) {
+  for(auto i=0ul; i<boost::num_vertices(g); ++i) {
+    g[i].accumulated = g[i].distance;
+  }
 
-  Vi accumulated = distance;
-  
+  auto rg = boost::make_reverse_graph(g);
   // do topological sort with boost
-  std::vector<Graph::vertex_descriptor> topoOrder(boost::num_vertices(rgraph));
-  boost::topological_sort(rgraph, topoOrder.begin());
+  std::vector<Graph::vertex_descriptor> topoOrder(boost::num_vertices(rg));
+  boost::topological_sort(rg, topoOrder.begin());
 
   // Go through the graph in reversed topological order
   for(auto vit = topoOrder.rbegin(); vit != topoOrder.rend(); ++vit) {
-    auto v = *vit;
-    auto weight = nodeWeights.empty() ? 1 : nodeWeights.at(v)
-    LOG("On vtx " << n << ", accumulated: " << accumulated.at(v) << ", distance " << distance.at(v));
-    auto [it, end] = boost::adjacent_vertices(v, rgraph);
+    auto src = *vit;
+    LOG("On vtx " << n << ", accumulated: " << rg[src].accumulated << ", distance " << rg[src].distance);
+    auto [it, end] = boost::out_edges(src, rg);
     for (; it != end; ++it) {
-      accumulated.at(*it) = std::max(accumulated.at(*it), 
-                                     accumulated.at(v) - (distance.at(v) - distance.at(*it) - weight));
-      LOG("- set vertex " << *it << ": " << accumulated.at(*it))
+      auto tgt = boost::target(*it, rg);
+      rg[*it].accumulated = rg[src].accumulated - (rg[src].distance - rg[tgt].distance - rg[src].weight);
+      rg[tgt].accumulated = std::max(rg[tgt].accumulated, rg[*it].accumulated);
+      LOG("- set vertex " << src << ": " << rg[tgt].accumulated)
     }
   }
-
-  return accumulated;
 }
 
 inline std::pair<Vi, Vi> filterEdges(const Vi &src, const Vi &dst,
                  const Vi &nodeWeights, std::size_t trackLengthConstraint) {
-    auto g = make_graph(src, dst);
-    auto distances = findMaxDistances(g, nodeWeights);
-    auto accumulated = accumulateBackwards(g, distances, nodeWeights);
+    auto g = make_graph(src, dst, nodeWeights);
+    findMaxDistances(g);
+    Vi distances;
+    for(auto i=0ul; i<boost::num_vertices(g); ++i) {
+      distances.push_back(g[i].distance);
+    }
+    accumulateBackwards(g);
+    Vi accumulated;
+    for(auto i=0ul; i<boost::num_vertices(g); ++i) {
+      accumulated.push_back(g[i].accumulated);
+    }
 
     // filter out edges that are not part of long enough tracks
+  #if 0
     for(auto v=0ul; v<accumulated.size(); ++v) {
       LOG("Vtx " << v << " has accumulated " << accumulated.at(v));
       if( accumulated.at(v) < trackLengthConstraint ) {
@@ -87,6 +112,10 @@ inline std::pair<Vi, Vi> filterEdges(const Vi &src, const Vi &dst,
         boost::clear_vertex(v, g);
       }
     }
+  #else
+    auto [begin, end] = boost::edges(g);
+    boost::remove_edge_if([&](auto e){ return g[e].accumulated < trackLengthConstraint; }, g);
+  #endif
 
     Vi newSrc, newDst;
     newSrc.reserve(boost::num_edges(g));
