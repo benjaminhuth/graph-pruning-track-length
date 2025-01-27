@@ -4,14 +4,18 @@
 
 auto test_graph(Graph &g, const std::vector<int> &distances, 
                 const std::vector<int> &accumulated) {
-    findMaxDistances(g);
+    // do topological sort with boost
+    std::vector<Graph::vertex_descriptor> topoOrder(boost::num_vertices(g));
+    boost::topological_sort(g, topoOrder.begin());
+    
+    findMaxDistances(g, topoOrder);
     Vi res;
     for(auto i=0ul; i<boost::num_vertices(g); ++i) {
       res.push_back(g[i].distance);
     }
     BOOST_CHECK_EQUAL_COLLECTIONS(res.begin(), res.end(), distances.begin(), distances.end());
 
-    accumulateBackwards(g);
+    accumulateBackwards(g, topoOrder);
     Vi res2;
     for(auto i=0ul; i<boost::num_vertices(g); ++i) {
       res2.push_back(g[i].accumulated);

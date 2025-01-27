@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.30)
+cmake_minimum_required(VERSION 3.25)
 project(graph_pruning)
 
 find_package(Boost REQUIRED COMPONENTS unit_test_framework)

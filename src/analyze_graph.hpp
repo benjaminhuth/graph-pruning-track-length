@@ -44,11 +44,7 @@ inline auto make_graph(const Vi& from, const Vi& to, const Vi &weights = {}) {
 }
 
 
-inline auto findMaxDistances(Graph &g) {
-  // do topological sort with boost
-  std::vector<Graph::vertex_descriptor> topoOrder(boost::num_vertices(g));
-  boost::topological_sort(g, topoOrder.begin());
-
+inline auto findMaxDistances(Graph &g, const std::vector<Graph::vertex_descriptor> &topoOrder) {
   for(auto vit = topoOrder.rbegin(); vit != topoOrder.rend(); ++vit) {
     auto src = *vit;
     LOG("On vtx " << v << " with dist " << distance.at(v));
@@ -65,18 +61,15 @@ inline auto findMaxDistances(Graph &g) {
 }
 
 
-inline void accumulateBackwards(Graph &g) {
+inline void accumulateBackwards(Graph &g, const std::vector<Graph::vertex_descriptor> &topoOrder) {
   for(auto i=0ul; i<boost::num_vertices(g); ++i) {
     g[i].accumulated = g[i].distance;
   }
 
   auto rg = boost::make_reverse_graph(g);
-  // do topological sort with boost
-  std::vector<Graph::vertex_descriptor> topoOrder(boost::num_vertices(rg));
-  boost::topological_sort(rg, topoOrder.begin());
 
-  // Go through the graph in reversed topological order
-  for(auto vit = topoOrder.rbegin(); vit != topoOrder.rend(); ++vit) {
+  // Go through the graph in topological order (reverse order of reversed graph == forward order of graph)
+  for(auto vit = topoOrder.begin(); vit != topoOrder.end(); ++vit) {
     auto src = *vit;
     LOG("On vtx " << n << ", accumulated: " << rg[src].accumulated << ", distance " << rg[src].distance);
     auto [it, end] = boost::out_edges(src, rg);
@@ -92,16 +85,13 @@ inline void accumulateBackwards(Graph &g) {
 inline std::pair<Vi, Vi> filterEdges(const Vi &src, const Vi &dst,
                  const Vi &nodeWeights, std::size_t trackLengthConstraint) {
     auto g = make_graph(src, dst, nodeWeights);
-    findMaxDistances(g);
-    Vi distances;
-    for(auto i=0ul; i<boost::num_vertices(g); ++i) {
-      distances.push_back(g[i].distance);
-    }
-    accumulateBackwards(g);
-    Vi accumulated;
-    for(auto i=0ul; i<boost::num_vertices(g); ++i) {
-      accumulated.push_back(g[i].accumulated);
-    }
+
+    // do topological sort with boost
+    std::vector<Graph::vertex_descriptor> topoOrder(boost::num_vertices(g));
+    boost::topological_sort(g, topoOrder.begin());
+
+    findMaxDistances(g, topoOrder);
+    accumulateBackwards(g, topoOrder);
 
     // filter out edges that are not part of long enough tracks
   #if 0
